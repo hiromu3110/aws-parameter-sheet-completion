@@ -106,26 +106,21 @@ def invoke(api_name, region_name, action_name, request_params):
 
 
 # reads API parameters
-def read_api_params(start_cell):
-    cell = start_cell
+def read_api_params(cell, args):
+    ws = cell.parent
+    for row in ws.iter_rows(values_only=True,
+                            min_row=cell.row, max_row=cell.row,
+                            min_col=cell.column, max_col=cell.column+3):
+        api_name, region_name, action_name, req_params = row
 
-    api_name = cell.value
-    logger.debug(f'{cell.coordinate}: API name is [{api_name}]')
-    cell = cell.offset(column=1)
+    logger.debug(f'{cell.row}: API name is [{api_name}]')
+    logger.debug(f'{cell.row}: region name is [{region_name}]')
+    logger.debug(f'{cell.row}: action name is [{action_name}]')
+    logger.debug(f'{cell.row}: request params is {req_params}')
 
-    region_name = cell.value
-    logger.debug(f'{cell.coordinate}: region name is [{region_name}]')
-    cell = cell.offset(column=1)
-
-    action_name = cell.value
-    logger.debug(f'{cell.coordinate}: action name is [{action_name}]')
-    cell = cell.offset(column=1)
-
-    req_params = cell.value
-    logger.debug(f'{cell.coordinate}: request params is {req_params}')
-    cell = cell.offset(column=1)
-
-    req_params = resolve_placeholders(req_params, '%', cell)
+    symbol = '%'
+    for i, x in enumerate(args):
+        req_params = req_params.replace(f'{symbol}{i + 1}', x)
     logger.debug(f'resolved request params is {req_params}')
 
     return dict(api_name=api_name,
@@ -177,17 +172,73 @@ def write_value(cell, value):
         cell.value = str(value)
 
 
-def process_worksheet(worksheet):
-    response = None
+def find_form(ws):
+    def find_right(left):
+        for col in ws.iter_cols(min_row=left.row, max_row=left.row):
+            cell = col[0]
+            if cell.value == '%right':
+                return cell.column
+        return ws.max_column
 
-    for row in worksheet.iter_rows(min_col=1, max_col=1):
+    top = None
+    right = None
+
+    for row in ws.iter_rows(min_col=1, max_col=1):
+        cell = row[0]
+        logger.debug(f'current row is {cell.row}')
+        if cell.value == '%top':
+            top = cell.row
+            right = find_right(cell)
+        elif cell.value == '%bottom':
+            bottom = cell.row
+            return top, bottom, right
+
+    if not top:
+        raise Exception('%top is not found.')
+    else:
+        raise Exception('%bottom is not found.')
+
+
+def copy_form(ws, count):
+    top, bottom, right = find_form(ws)
+
+    work_row = bottom + 1
+
+    for i in range(1, count + 1):
+        for row in ws.iter_rows(min_row=top, max_row=bottom, max_col=right):
+            for cell in row:
+                dst_cell = ws.cell(row=work_row, column=cell.column)
+                if cell.has_style:
+                    dst_cell._style = cell._style
+                if cell.column == 1 and cell.value == '%top':
+                    dst_cell.value = f'%top{i}'
+                elif cell.column == 1 and cell.value == '%bottom':
+                    dst_cell.value = f'%bottom{i}'
+                else:
+                    dst_cell.value = cell.value
+            work_row += 1
+
+    for row in ws.iter_rows(min_row=work_row, max_col=right):
         for cell in row:
+            cell.value = None
+
+
+def process_worksheet(ws, args):
+    copy_form(ws, len(args))
+
+    response = None
+    for i, x in enumerate(args):
+        inside = False
+        for row in ws.iter_rows(min_col=1, max_col=1):
+            cell = row[0]
             logger.debug(f'current row is {cell.row}')
-            if cell.value == '%':
-                input_cell = seek_column_symbol('%%', cell)
-                request = read_api_params(input_cell)
+            if cell.value == f'%top{i + 1}':
+                inside = True
+            elif inside and cell.value == '#call':
+                input_cell = seek_column_symbol('##', cell)
+                request = read_api_params(input_cell, x)
                 response = invoke(**request)
-            elif cell.value == '#':
+            elif inside and cell.value == '#output':
                 input_cell = seek_column_symbol('##', cell)
                 path = read_path(input_cell)
                 if '%' in path:
@@ -198,27 +249,47 @@ def process_worksheet(worksheet):
                 write_value(output_cell, value)
 
 
+def read_target_resources_by_sheet(ws):
+    sheets = dict()
+    for row in ws.iter_rows(values_only=True, min_col=1):
+        sheet_name = row[0]
+        if not sheet_name:
+            continue
+        sheets.setdefault(sheet_name, [])
+        args = [x for x in row[1:] if x is not None]
+        sheets[sheet_name].append(args)
+    return sheets
+
+
 def process_workbook(src_filename, dst_filename):
     wb = openpyxl.load_workbook(src_filename)
-    ws = wb['TargetSheets']
-    target_sheets = None
-    for col in ws.iter_cols(values_only=True):
-        target_sheets = col
-        break
+    ws = wb['TargetResources']
     try:
-        for sheet_name in target_sheets:
-            ws = wb[sheet_name]
-            process_worksheet(ws)
+        sheets = read_target_resources_by_sheet(ws)
+        for sheet_name, args in sheets.items():
+            process_worksheet(wb[sheet_name], args)
         wb.save(dst_filename)
     except Exception as e:
-        raise Exception(f'Failed: {sheet_name}') from e
+        raise Exception('Failed: ' + sheet_name) from e
 
 
 if __name__ == '__main__':
     sh = logging.StreamHandler(sys.stdout)
     logger.addHandler(sh)
 
-    session = boto3.Session(profile_name='default')
+    if len(sys.argv) < 2:
+        raise Exception('Excel book is not specified.')
+    src_file = sys.argv[1]
+    if not src_file.lower().endswith('.xlsx'):
+        raise Exception("Specified file's extension is not XLSX: " + src_file)
+    dst_file = re.sub(r'\.xlsx$', '_.xlsx', src_file, flags=re.IGNORECASE)
+
+    if 2 < len(sys.argv):
+        profile_name = sys.argv[2]
+    else:
+        profile_name = 'default'
+    session = boto3.Session(profile_name=profile_name)
     identity = session.client('sts').get_caller_identity()
     logger.info('GetCallerIdentity: ' + json.dumps(identity, indent=2))
-    process_workbook('Book1.xlsx', 'Book2.xlsx')
+
+    process_workbook(src_file, dst_file)
