@@ -96,7 +96,7 @@ def invoke(api_name, region_name, action_name, request_params):
         logger.info('Action: ' + action_name)
         logger.info('Request: ' + json.dumps(request, indent=2))
         response = method(**request)
-        logger.info('Response: ' + json.dumps(response, indent=2))
+        logger.info('Response: ' + json.dumps(response, indent=2, default=str))
         return response
     except Exception as e:
         logger.error('request is not accepted: ' + json.dumps(request, indent=2))
