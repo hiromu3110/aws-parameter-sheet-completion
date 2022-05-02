@@ -198,7 +198,7 @@ def process_worksheet(worksheet):
 
 
 def process_workbook(src_filename, dst_filename):
-    wb = openpyxl.load_workbook(src_filename, data_only=True)
+    wb = openpyxl.load_workbook(src_filename)
     ws = wb['TargetSheets']
     target_sheets = None
     for col in ws.iter_cols(values_only=True):
