@@ -82,7 +82,8 @@ def invoke(api_name, region_name, action_name, request_params):
         raise e
 
     if not is_safe_action(action_name):
-        raise Exception('Performing unsafe action was detected: ' + action_name)
+        raise Exception('Performing unsafe action was detected: ' +
+                        action_name)
 
     try:
         request = json.loads(request_params)
@@ -99,7 +100,8 @@ def invoke(api_name, region_name, action_name, request_params):
         logger.info('Response: ' + json.dumps(response, indent=2, default=str))
         return response
     except Exception as e:
-        logger.error('request is not accepted: ' + json.dumps(request, indent=2))
+        logger.error('request is not accepted: ' +
+                     json.dumps(request, indent=2))
         raise e
 
 
@@ -126,12 +128,10 @@ def read_api_params(start_cell):
     req_params = resolve_placeholders(req_params, '%', cell)
     logger.debug(f'resolved request params is {req_params}')
 
-    return dict(
-        api_name=api_name,
-        region_name=region_name,
-        action_name=action_name,
-        request_params=req_params
-    )
+    return dict(api_name=api_name,
+                region_name=region_name,
+                action_name=action_name,
+                request_params=req_params)
 
 
 # reads the row and builds a JSONPath string
@@ -163,7 +163,8 @@ def seek_column_symbol(symbol, start_cell):
             return cell.offset(column=1)
         cell = cell.offset(column=1)
     logger.info(f'[{symbol}] is not found in {cell.coordinate}')
-    raise Exception(f'Symbol [{symbol}] is not found: {start_cell.column_letter}')
+    raise Exception(f'Symbol [{symbol}] is not found: ' +
+                    start_cell.column_letter)
 
 
 # writes a value
