@@ -250,15 +250,19 @@ def process_worksheet(ws, args):
 
 
 def read_target_resources_by_sheet(ws):
-    sheets = dict()
+    sheet_names = ws.parent.sheetnames
+    result = dict()
     for row in ws.iter_rows(values_only=True, min_col=1):
         sheet_name = row[0]
         if not sheet_name:
             continue
-        sheets.setdefault(sheet_name, [])
+        if sheet_name not in sheet_names:
+            logger.error('no such worksheet: ' + sheet_name)
+            continue
+        result.setdefault(sheet_name, [])
         args = [x for x in row[1:] if x is not None]
-        sheets[sheet_name].append(args)
-    return sheets
+        result[sheet_name].append(args)
+    return result
 
 
 def process_workbook(src_filename, dst_filename):
