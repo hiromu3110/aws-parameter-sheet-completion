@@ -214,6 +214,10 @@ def copy_form(ws, count):
                     dst_cell.value = f'%top{i}'
                 elif cell.column == 1 and cell.value == '%bottom':
                     dst_cell.value = f'%bottom{i}'
+                elif cell.data_type == 'f':
+                    dst_cell.value = openpyxl.formula.translate.Translator(
+                        cell.value, origin=cell.coordinate
+                    ).translate_formula(dst_cell.coordinate)
                 else:
                     dst_cell.value = cell.value
             work_row += 1
