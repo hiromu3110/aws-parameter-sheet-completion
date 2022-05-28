@@ -1,3 +1,4 @@
+import copy
 import json
 import re
 import logging
@@ -200,11 +201,23 @@ def find_form(ws):
 
 
 def copy_form(ws, count):
+    from openpyxl.worksheet.cell_range import CellRange
+
     top, bottom, right = find_form(ws)
+
+    src_range = CellRange(min_col=1, min_row=top,
+                          max_col=right, max_row=bottom)
+    src_merged_cell_ranges = [r for r in ws.merged_cells.ranges
+                              if src_range.issuperset(r)]
 
     work_row = bottom + 1
 
     for i in range(1, count + 1):
+        dst_range = CellRange(min_col=1, min_row=work_row,
+                              max_col=right, max_row=(work_row + bottom - top))
+        for r in ws.merged_cells.ranges:
+            if not dst_range.isdisjoint(r):
+                ws.unmerge_cells(r.coord)
         for row in ws.iter_rows(min_row=top, max_row=bottom, max_col=right):
             for cell in row:
                 dst_cell = ws.cell(row=work_row, column=cell.column)
@@ -221,6 +234,10 @@ def copy_form(ws, count):
                 else:
                     dst_cell.value = cell.value
             work_row += 1
+        for r in src_merged_cell_ranges:
+            copied = copy.copy(r)
+            copied.shift(row_shift=(work_row - bottom - 1))
+            ws.merge_cells(copied.coord)
 
     for row in ws.iter_rows(min_row=work_row, max_col=right):
         for cell in row:
