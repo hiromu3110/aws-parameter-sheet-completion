@@ -218,7 +218,10 @@ def copy_form(ws, count):
         for r in ws.merged_cells.ranges:
             if not dst_range.isdisjoint(r):
                 ws.unmerge_cells(r.coord)
-        for row in ws.iter_rows(min_row=top, max_row=bottom, max_col=right):
+        for j, row in enumerate(ws.iter_rows(min_row=top, max_row=bottom,
+                                             max_col=right)):
+            ws.row_dimensions[work_row].height = \
+                    ws.row_dimensions[top + j].height
             for cell in row:
                 dst_cell = ws.cell(row=work_row, column=cell.column)
                 if cell.has_style:
