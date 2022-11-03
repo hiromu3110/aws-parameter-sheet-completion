@@ -1,7 +1,7 @@
 import copy
 import json
-import re
 import logging
+import re
 import sys
 import boto3
 import openpyxl
