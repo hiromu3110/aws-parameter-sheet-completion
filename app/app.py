@@ -180,13 +180,6 @@ def write_value(cell, value):
 
 
 def find_form(ws):
-    def find_right(left):
-        for col in ws.iter_cols(min_row=left.row, max_row=left.row):
-            cell = col[0]
-            if cell.value == '%right':
-                return cell.column
-        return ws.max_column
-
     top = None
     right = None
 
@@ -195,10 +188,13 @@ def find_form(ws):
         logger.debug(f'current row is {cell.row}')
         if cell.value == '%top':
             top = cell.row
-            right = find_right(cell)
+            left_cell = find_column_symbol('%left', cell)
+            right_cell = find_column_symbol('%right', left_cell)
+            left = left_cell.column
+            right = right_cell.column
         elif cell.value == '%bottom':
             bottom = cell.row
-            return top, bottom, right
+            return top, bottom, left, right
 
     if not top:
         raise Exception('%top is not found.')
@@ -207,48 +203,49 @@ def find_form(ws):
 
 
 def copy_form(ws, count):
+    from openpyxl.utils import get_column_letter
     from openpyxl.worksheet.cell_range import CellRange
 
-    top, bottom, right = find_form(ws)
+    top, bottom, left, right = find_form(ws)
 
-    src_range = CellRange(min_col=1, min_row=top,
-                          max_col=right, max_row=bottom)
+    src_range = CellRange(min_row=top, max_row=bottom,
+                          min_col=left, max_col=right)
     src_merged_cell_ranges = [r for r in ws.merged_cells.ranges
                               if src_range.issuperset(r)]
 
-    work_row = bottom + 1
+    work_col = right + 1
 
     for i in range(1, count + 1):
-        dst_range = CellRange(min_col=1, min_row=work_row,
-                              max_col=right, max_row=(work_row + bottom - top))
+        dst_range = CellRange(min_row=top, max_row=bottom, min_col=work_col,
+                              max_col=(work_col + right - left))
         for r in ws.merged_cells.ranges:
             if not dst_range.isdisjoint(r):
                 ws.unmerge_cells(r.coord)
-        for j, row in enumerate(ws.iter_rows(min_row=top, max_row=bottom,
-                                             max_col=right)):
-            ws.row_dimensions[work_row].height = \
-                    ws.row_dimensions[top + j].height
-            for cell in row:
-                dst_cell = ws.cell(row=work_row, column=cell.column)
+        for j, col in enumerate(ws.iter_cols(min_row=top, max_row=bottom,
+                                             min_col=left, max_col=right)):
+            ws.column_dimensions[get_column_letter(work_col)].width = \
+                    ws.column_dimensions[get_column_letter(left + j)].width
+            for cell in col:
+                dst_cell = ws.cell(row=cell.row, column=work_col)
                 if cell.has_style:
                     dst_cell._style = cell._style
-                if cell.column == 1 and cell.value == '%top':
-                    dst_cell.value = f'%top{i}'
-                elif cell.column == 1 and cell.value == '%bottom':
-                    dst_cell.value = f'%bottom{i}'
+                if cell.row == top and cell.value == '%left':
+                    dst_cell.value = f'%left{i}'
+                elif cell.row == top and cell.value == '%right':
+                    dst_cell.value = f'%right{i}'
                 elif cell.data_type == 'f':
                     dst_cell.value = openpyxl.formula.translate.Translator(
                         cell.value, origin=cell.coordinate
                     ).translate_formula(dst_cell.coordinate)
                 else:
                     dst_cell.value = cell.value
-            work_row += 1
+            work_col += 1
         for r in src_merged_cell_ranges:
             copied = copy.copy(r)
-            copied.shift(row_shift=(work_row - bottom - 1))
+            copied.shift(col_shift=(work_col - right - 1))
             ws.merge_cells(copied.coord)
 
-    for row in ws.iter_rows(min_row=work_row, max_col=right):
+    for row in ws.iter_rows(min_col=work_col, max_row=bottom):
         for cell in row:
             cell.value = None
 
@@ -258,24 +255,27 @@ def process_worksheet(ws, args):
 
     response = None
     for i, x in enumerate(args):
-        inside = False
+        left = None
         for row in ws.iter_rows(min_col=1, max_col=1):
             cell = row[0]
             logger.debug(f'current row is {cell.row}')
-            if cell.value == f'%top{i + 1}':
-                inside = True
-            elif inside and cell.value == '#call':
+            if cell.value == '%top':
+                left = find_column_symbol(f'%left{i + 1}', cell)
+            elif cell.value == '%bottom':
+                break
+            elif left and cell.value == '#call':
                 input_cell = find_next_cell('##', cell)
                 request = read_api_params(input_cell, x)
                 response = invoke(**request)
-            elif inside and cell.value == '#output':
+            elif left and cell.value == '#output':
                 input_cell = find_next_cell('##', cell)
                 path = read_path(input_cell)
                 if '%' in path:
                     param_cell = find_next_cell('###', cell)
                     path = resolve_placeholders(path, '%', param_cell)
                 value = get_value(response, path)
-                output_cell = find_next_cell('####', cell)
+                output_cell = find_next_cell('####',
+                                             ws.cell(cell.row, left.column))
                 write_value(output_cell, value)
 
 
