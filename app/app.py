@@ -147,8 +147,8 @@ def read_path(start_cell):
         raise Exception('Path is not found: ' + start_cell.coordinate)
 
 
-# seeks a next column to process
-def seek_column_symbol(symbol, start_cell):
+# finds a symbol in the row
+def find_column_symbol(symbol, start_cell):
     max_column = start_cell.parent.max_column
 
     cell = start_cell
@@ -156,11 +156,17 @@ def seek_column_symbol(symbol, start_cell):
         logger.debug(f'seeking [{symbol}] in {cell.coordinate}')
         if cell.value == symbol:
             logger.debug(f'[{symbol}] is found in {cell.coordinate}')
-            return cell.offset(column=1)
+            return cell
         cell = cell.offset(column=1)
     logger.info(f'[{symbol}] is not found in {cell.coordinate}')
     raise Exception(f'Symbol [{symbol}] is not found: ' +
                     start_cell.column_letter)
+
+
+# finds a cell to process
+def find_next_cell(symbol, start_cell):
+    cell = find_column_symbol(symbol, start_cell)
+    return cell.offset(column=1)
 
 
 # writes a value
@@ -259,17 +265,17 @@ def process_worksheet(ws, args):
             if cell.value == f'%top{i + 1}':
                 inside = True
             elif inside and cell.value == '#call':
-                input_cell = seek_column_symbol('##', cell)
+                input_cell = find_next_cell('##', cell)
                 request = read_api_params(input_cell, x)
                 response = invoke(**request)
             elif inside and cell.value == '#output':
-                input_cell = seek_column_symbol('##', cell)
+                input_cell = find_next_cell('##', cell)
                 path = read_path(input_cell)
                 if '%' in path:
-                    param_cell = seek_column_symbol('###', cell)
+                    param_cell = find_next_cell('###', cell)
                     path = resolve_placeholders(path, '%', param_cell)
                 value = get_value(response, path)
-                output_cell = seek_column_symbol('####', cell)
+                output_cell = find_next_cell('####', cell)
                 write_value(output_cell, value)
 
 
