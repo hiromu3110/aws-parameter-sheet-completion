@@ -202,8 +202,22 @@ def find_form(ws):
         raise Exception('%bottom is not found.')
 
 
-def copy_form(ws, count):
+def copy_column_dimensions(dimensions, src_col, dst_col):
     from openpyxl.utils import get_column_letter
+
+    dim = dimensions.get(get_column_letter(src_col))
+    if dim is None:
+        return
+    dimensions[get_column_letter(dst_col)].width = dim.width
+    dimensions[get_column_letter(dst_col)].hidden = dim.hidden
+    if dim.outline_level != 0:
+        dimensions.group(get_column_letter(dst_col),
+                         get_column_letter(dst_col + dim.max - dim.min),
+                         outline_level=dim.outline_level,
+                         hidden=dim.hidden)
+
+
+def copy_form(ws, count):
     from openpyxl.worksheet.cell_range import CellRange
 
     top, bottom, left, right = find_form(ws)
@@ -213,8 +227,9 @@ def copy_form(ws, count):
     src_merged_cell_ranges = [r for r in ws.merged_cells.ranges
                               if src_range.issuperset(r)]
 
-    work_col = right + 1
+    ws.sheet_properties.outlinePr.summaryRight = False
 
+    work_col = right + 1
     for i in range(1, count + 1):
         dst_range = CellRange(min_row=top, max_row=bottom, min_col=work_col,
                               max_col=(work_col + right - left))
@@ -223,8 +238,7 @@ def copy_form(ws, count):
                 ws.unmerge_cells(r.coord)
         for j, col in enumerate(ws.iter_cols(min_row=top, max_row=bottom,
                                              min_col=left, max_col=right)):
-            ws.column_dimensions[get_column_letter(work_col)].width = \
-                    ws.column_dimensions[get_column_letter(left + j)].width
+            copy_column_dimensions(ws.column_dimensions, left + j, work_col)
             for cell in col:
                 dst_cell = ws.cell(row=cell.row, column=work_col)
                 if cell.has_style:
